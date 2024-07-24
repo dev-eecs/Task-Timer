@@ -1,10 +1,11 @@
 import tkinter as tk
-from tkinter import messagebox, filedialog, Toplevel
+from tkinter import messagebox, filedialog, Toplevel, Menu
 from tkcalendar import Calendar
 import time
 from threading import Thread, Event
 import json
 import os
+import sys
 from datetime import datetime
 from pydub import AudioSegment
 from pydub.playback import play
@@ -14,11 +15,33 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 timer_thread = None
 timer_event = None
 pause_event = None
-version = "3.1.6 Build 29"
+version = "3.2.8 Build 38"
 config_file = "timers_config.json"
 log_file = "task_logs.json"
 tasks = {}
 task_logs = {}
+
+root = tk.Tk()
+root.title("Task Timer")
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+start_icon = tk.PhotoImage(file=resource_path("icons/start.png"))
+pause_icon = tk.PhotoImage(file=resource_path("icons/pause.png"))
+resume_icon = tk.PhotoImage(file=resource_path("icons/resume.png"))
+stop_icon = tk.PhotoImage(file=resource_path("icons/stop.png"))
+add_icon = tk.PhotoImage(file=resource_path("icons/add.png"))
+edit_icon = tk.PhotoImage(file=resource_path("icons/edit.png"))
+delete_icon = tk.PhotoImage(file=resource_path("icons/delete.png"))
+move_up_icon = tk.PhotoImage(file=resource_path("icons/up.png"))
+move_down_icon = tk.PhotoImage(file=resource_path("icons/down.png"))
 
 def play_sound(sound_file):
     sound = AudioSegment.from_file(sound_file, format="wav")
@@ -31,7 +54,8 @@ def log_task(task, duration):
     task_logs[date_str].append({"task": task, "duration": duration})
     with open(log_file, 'w') as file:
         json.dump(task_logs, file)
-    update_pie_chart(date_str)
+    if 'chart_window' in globals() and chart_window.winfo_exists():
+        update_pie_chart(date_str, chart_window.frame_pie_chart)
 
 def load_task_logs():
     global task_logs
@@ -75,17 +99,17 @@ def set_timer(task):
     timer_thread.start()
     start_pause_button.config(state=tk.NORMAL)
     stop_button.config(state=tk.NORMAL)
-    start_pause_button.config(text="Pause", command=pause_timer)
+    start_pause_button.config(image=pause_icon, command=pause_timer)
 
 def pause_timer():
     global pause_event
     pause_event.set()
-    start_pause_button.config(text="Resume", command=resume_timer)
+    start_pause_button.config(image=resume_icon, command=resume_timer)
 
 def resume_timer():
     global pause_event
     pause_event.clear()
-    start_pause_button.config(text="Pause", command=pause_timer)
+    start_pause_button.config(image=pause_icon, command=pause_timer)
 
 def stop_timer():
     global timer_thread, timer_event
@@ -118,29 +142,51 @@ def load_tasks():
     else:
         tasks = {}
 
-def add_task():
-    task = entry_task.get()
-    try:
-        duration = int(entry_duration.get())
-        sound_file = entry_sound.get()
-        if task in tasks:
-            messagebox.showerror("Duplicate Task", "This task name already exists. Please choose a different name.")
-        elif task and duration and sound_file:
-            tasks[task] = {'duration': duration, 'sound': sound_file}
-            listbox_tasks.insert(tk.END, task)
-            save_tasks()
-    except ValueError:
-        messagebox.showerror("Invalid input", "Please enter a valid number for the duration.")
-
 def init_tasks():
     for task in tasks:
         listbox_tasks.insert(tk.END, task)
+
+def add_task_window():
+    add_window = Toplevel(root)
+    add_window.title("Add Task")
+    add_window.attributes("-topmost", True)
+
+    tk.Label(add_window, text="Task").grid(row=0, column=0)
+    entry_task_add = tk.Entry(add_window)
+    entry_task_add.grid(row=0, column=1)
+
+    tk.Label(add_window, text="Duration (minutes)").grid(row=1, column=0)
+    entry_duration_add = tk.Entry(add_window)
+    entry_duration_add.grid(row=1, column=1)
+
+    tk.Label(add_window, text="Sound File").grid(row=2, column=0)
+    entry_sound_add = tk.Entry(add_window)
+    entry_sound_add.grid(row=2, column=1)
+    tk.Button(add_window, text="Choose Sound", command=lambda: choose_sound(entry_sound_add)).grid(row=2, column=2)
+
+    def save_new_task():
+        task = entry_task_add.get()
+        try:
+            duration = int(entry_duration_add.get())
+            sound_file = entry_sound_add.get()
+            if task in tasks:
+                messagebox.showerror("Duplicate Task", "This task name already exists. Please choose a different name.")
+            elif task and duration and sound_file:
+                tasks[task] = {'duration': duration, 'sound': sound_file}
+                listbox_tasks.insert(tk.END, task)
+                save_tasks()
+                add_window.destroy()
+        except ValueError:
+            messagebox.showerror("Invalid input", "Please enter a valid number for the duration.")
+
+    tk.Button(add_window, text="Save", command=save_new_task).grid(row=3, columnspan=3)
 
 def edit_task():
     try:
         selected_task = listbox_tasks.get(listbox_tasks.curselection())
         edit_window = Toplevel(root)
         edit_window.title("Edit Task")
+        edit_window.attributes("-topmost", True)
 
         tk.Label(edit_window, text="Task").grid(row=0, column=0)
         entry_task_edit = tk.Entry(edit_window)
@@ -223,12 +269,30 @@ def update_tasks(tasks_list):
     tasks = updated_tasks
     save_tasks()
 
-def show_pie_chart():
-    selected_date = cal.selection_get().strftime("%Y-%m-%d")
-    update_pie_chart(selected_date)
+def show_pie_chart_window():
+    global chart_window
+    chart_window = Toplevel(root)
+    chart_window.title("Pie Chart")
+    chart_window.attributes("-topmost", True)
 
-def update_pie_chart(date):
-    for widget in frame_pie_chart.winfo_children():
+    frame_calendar_pie = tk.Frame(chart_window)
+    frame_calendar_pie.pack(pady=10)
+
+    cal = Calendar(frame_calendar_pie, selectmode='day', date_pattern='yyyy-mm-dd')
+    cal.pack(side=tk.LEFT, padx=10)
+    chart_window.frame_pie_chart = tk.Frame(frame_calendar_pie)
+    chart_window.frame_pie_chart.pack(side=tk.RIGHT, padx=10)
+
+    def on_date_select(event):
+        selected_date = cal.selection_get().strftime("%Y-%m-%d")
+        update_pie_chart(selected_date, chart_window.frame_pie_chart)
+        chart_window.update_idletasks()
+        chart_window.geometry("")
+
+    cal.bind("<<CalendarSelected>>", on_date_select)
+
+def update_pie_chart(date, window):
+    for widget in window.winfo_children():
         widget.destroy()
 
     if date in task_logs:
@@ -247,63 +311,69 @@ def update_pie_chart(date):
         ax.pie(sizes, labels=labels, autopct=lambda p: f'{p * sum(sizes) / 100:.1f} mins', startangle=90)
         ax.axis('equal')
 
-        canvas = FigureCanvasTkAgg(fig, master=frame_pie_chart)
+        canvas = FigureCanvasTkAgg(fig, master=window)
         canvas.draw()
         canvas.get_tk_widget().pack()
     else:
-        messagebox.showinfo("No Data", f"No task data available for {date}")
+        tk.Label(window, text="No Data Available", font=('Helvetica', 16)).pack()
 
-root = tk.Tk()
-root.title("Task Timer")
+def show_about():
+    messagebox.showinfo("About Task Timer", f"Task Timer\nVersion: {version}\nDesigned by @phys-cpp")
 
 load_tasks()
 load_task_logs()
 
-tk.Label(root, text="Task").pack()
-entry_task = tk.Entry(root)
-entry_task.pack()
+menu_bar = Menu(root)
+root.config(menu=menu_bar)
 
-tk.Label(root, text="Duration (minutes)").pack()
-entry_duration = tk.Entry(root)
-entry_duration.pack()
+chart_menu = Menu(menu_bar, tearoff=0)
+chart_menu.add_command(label="View Chart", command=show_pie_chart_window)
+menu_bar.add_cascade(label="Chart", menu=chart_menu)
 
-tk.Label(root, text="Sound File").pack()
-entry_sound = tk.Entry(root)
-entry_sound.pack()
-tk.Button(root, text="Choose Sound", command=lambda: choose_sound(entry_sound)).pack()
-
-tk.Button(root, text="Add Task", command=add_task).pack()
+help_menu = Menu(menu_bar, tearoff=0)
+help_menu.add_command(label="About Task Timer", command=show_about)
+menu_bar.add_cascade(label="Help", menu=help_menu)
 
 tk.Label(root, text="Tasks").pack()
 frame_tasks = tk.Frame(root)
 frame_tasks.pack()
-listbox_tasks = tk.Listbox(frame_tasks)
-listbox_tasks.grid(row=0, column=0, rowspan=4)
+listbox_tasks = tk.Listbox(frame_tasks, height=17)
+listbox_tasks.grid(row=0, column=0, rowspan=5)
 init_tasks()
 
-tk.Button(frame_tasks, text="Move Up", command=move_up).grid(row=0, column=1)
-tk.Button(frame_tasks, text="Move Down", command=move_down).grid(row=1, column=1)
-tk.Button(frame_tasks, text="Edit Task", command=edit_task).grid(row=2, column=1)
-tk.Button(frame_tasks, text="Delete Task", command=delete_task).grid(row=3, column=1)
+def create_button_with_tooltip(frame, image, command, tooltip_text, row, column, padx=0, pady=0):
+    button = tk.Button(frame, image=image, command=command)
+    button.grid(row=row, column=column, padx=padx, pady=pady)
+    def on_enter(event):
+        tooltip_label.config(text=tooltip_text)
+        x = event.widget.winfo_rootx() - root.winfo_rootx()
+        y = event.widget.winfo_rooty() - root.winfo_rooty() - 30
+        tooltip_label.place(x=x, y=y)
+    def on_leave(event):
+        tooltip_label.place_forget()
+    button.bind("<Enter>", on_enter)
+    button.bind("<Leave>", on_leave)
+    return button
 
-tk.Button(root, text="Start Timer", command=lambda: set_timer(listbox_tasks.get(tk.ACTIVE))).pack()
+tooltip_label = tk.Label(root, text="", bg="yellow", fg="black")
 
-start_pause_button = tk.Button(root, text="Pause", state=tk.DISABLED, command=pause_timer)
-start_pause_button.pack()
+create_button_with_tooltip(frame_tasks, add_icon, add_task_window, "Add Task", 0, 1)
+create_button_with_tooltip(frame_tasks, edit_icon, edit_task, "Edit Task", 1, 1)
+create_button_with_tooltip(frame_tasks, move_up_icon, move_up, "Move Up", 2, 1)
+create_button_with_tooltip(frame_tasks, move_down_icon, move_down, "Move Down", 3, 1)
+create_button_with_tooltip(frame_tasks, delete_icon, delete_task, "Delete Task", 4, 1)
 
-stop_button = tk.Button(root, text="Stop", state=tk.DISABLED, command=stop_timer)
-stop_button.pack()
+timer_buttons_frame = tk.Frame(root)
+timer_buttons_frame.pack()
 
-timer_display_label = tk.Label(root, text="", font=('Helvetica', 48))
+create_button_with_tooltip(timer_buttons_frame, start_icon, lambda: set_timer(listbox_tasks.get(tk.ACTIVE)), "Start Timer", 0, 0, padx=5, pady=5)
+start_pause_button = create_button_with_tooltip(timer_buttons_frame, pause_icon, pause_timer, "Pause", 0, 1, padx=5, pady=5)
+start_pause_button.config(state=tk.DISABLED)
+stop_button = create_button_with_tooltip(timer_buttons_frame, stop_icon, stop_timer, "Stop", 0, 2, padx=5, pady=5)
+stop_button.config(state=tk.DISABLED)
+
+timer_display_label = tk.Label(root, text="", font=('Helvetica', 58))
 timer_display_label.pack()
-
-cal = Calendar(root, selectmode='day', date_pattern='yyyy-mm-dd')
-cal.pack(pady=10)
-
-tk.Button(root, text="Show Pie Chart", command=show_pie_chart).pack()
-
-frame_pie_chart = tk.Frame(root)
-frame_pie_chart.pack()
 
 designed_by_label = tk.Label(root, text="Designed by @phys-cpp", font=('Helvetica', 10))
 designed_by_label.pack(side=tk.BOTTOM, pady=0)
