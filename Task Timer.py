@@ -14,7 +14,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 timer_thread = None
 timer_event = None
 pause_event = None
-version = "3.1.5 Build 28"
+version = "3.1.6 Build 29"
 config_file = "timers_config.json"
 log_file = "task_logs.json"
 tasks = {}
@@ -166,10 +166,11 @@ def edit_task():
                 if new_task_name != selected_task and new_task_name in tasks:
                     messagebox.showerror("Duplicate Task", "This task name already exists. Please choose a different name.")
                 else:
-                    tasks.pop(selected_task)
+                    if new_task_name != selected_task:
+                        tasks.pop(selected_task)
+                        listbox_tasks.delete(listbox_tasks.curselection())
+                        listbox_tasks.insert(tk.END, new_task_name)
                     tasks[new_task_name] = {'duration': new_duration, 'sound': new_sound_file}
-                    listbox_tasks.delete(listbox_tasks.curselection())
-                    listbox_tasks.insert(tk.END, new_task_name)
                     save_tasks()
                     edit_window.destroy()
             except ValueError:
